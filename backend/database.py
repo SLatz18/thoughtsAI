@@ -20,8 +20,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def get_database_url() -> str:
+    """
+    Get the database URL, converting Railway's format if needed.
+
+    Railway provides DATABASE_URL as postgres://... but asyncpg requires
+    postgresql+asyncpg://... format.
+    """
+    url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/thinking_partner")
+
+    # Convert Railway's postgres:// to postgresql+asyncpg://
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    return url
+
+
 # Database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/thinking_partner")
+DATABASE_URL = get_database_url()
 
 # Create async engine
 engine = create_async_engine(

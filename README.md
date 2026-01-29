@@ -254,11 +254,50 @@ docker-compose up -d
 
 ### Testing Without Voice
 
-If you don't have a Deepgram/OpenAI API key, you can still test:
+If you don't have an OpenAI API key for Whisper, you can still test:
 1. Start the application
 2. Click "Start Thinking Session"
 3. Use the text input box to type your thoughts
 4. The AI will still respond and organize your thoughts
+
+## Deploying to Railway
+
+### One-Click Deploy
+
+1. Fork this repository to your GitHub account
+2. Go to [Railway](https://railway.app) and sign in with GitHub
+3. Click "New Project" → "Deploy from GitHub repo"
+4. Select your forked repository
+5. Railway will auto-detect the configuration
+
+### Configure Environment Variables
+
+In your Railway project, add these environment variables:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `OPENAI_API_KEY` | Yes | Your OpenAI API key (for Whisper) |
+| `TRANSCRIPTION_PROVIDER` | No | Set to "whisper" (default) |
+
+### Add PostgreSQL Database
+
+1. In your Railway project, click "New" → "Database" → "PostgreSQL"
+2. Railway will automatically set the `DATABASE_URL` environment variable
+3. The app will auto-create tables on first run
+
+### Deploy
+
+Railway will automatically deploy when you push to your repository.
+
+Your app will be available at: `https://your-project-name.up.railway.app`
+
+### Important Notes for Production
+
+- Railway provides HTTPS automatically (required for microphone access)
+- The free tier includes 500 hours/month and $5 credit
+- WebSocket connections are fully supported
+- Monitor logs in Railway dashboard for debugging
 
 ## Troubleshooting
 
@@ -278,9 +317,10 @@ If you don't have a Deepgram/OpenAI API key, you can still test:
 - Ensure you have API credits available
 
 ### "Transcription not working"
-- Verify Deepgram or OpenAI API key is set
+- Verify your OpenAI API key is set correctly
 - Check that audio is being captured (recording indicator should pulse)
-- Try switching to text input mode
+- Look for Whisper errors in browser console or server logs
+- Try switching to text input mode as a fallback
 
 ## Limitations (M1 MVP)
 

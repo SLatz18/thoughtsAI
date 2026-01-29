@@ -2,8 +2,8 @@
 Transcription module for the Thinking Partner application.
 
 Supports two transcription providers:
-1. Deepgram (primary) - Real-time streaming transcription
-2. OpenAI Whisper (fallback) - Batch transcription
+1. OpenAI Whisper (primary) - Reliable batch transcription
+2. Deepgram (optional) - Real-time streaming transcription
 
 The module handles audio streaming, transcription, and pause detection.
 """
@@ -213,22 +213,30 @@ class DeepgramProvider(TranscriptionProvider):
 
 class WhisperProvider(TranscriptionProvider):
     """
-    OpenAI Whisper transcription provider (fallback).
+    OpenAI Whisper transcription provider (primary).
 
     Uses batch transcription since Whisper doesn't support streaming.
-    Accumulates audio and transcribes when requested.
+    Accumulates audio and transcribes periodically for near-real-time results.
+
+    Configuration:
+    - Transcribes every 1.5 seconds for responsive feedback
+    - Minimum audio threshold to avoid empty transcriptions
+    - Handles webm/opus audio format from browser MediaRecorder
     """
 
-    def __init__(self):
+    def __init__(self, transcribe_interval: float = 1.5):
         self.api_key = os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
 
+        self.transcribe_interval = transcribe_interval
         self._audio_buffer = bytearray()
         self._transcript_queue: asyncio.Queue[TranscriptionResult] = asyncio.Queue()
         self._is_active = False
         self._transcribe_task = None
         self._client = None
+        # Minimum bytes before attempting transcription (avoid empty audio)
+        self._min_audio_bytes = 1000
 
     async def start_stream(self) -> None:
         """Initialize the Whisper provider."""
@@ -240,53 +248,51 @@ class WhisperProvider(TranscriptionProvider):
 
         # Start periodic transcription task
         self._transcribe_task = asyncio.create_task(self._periodic_transcribe())
+        print("Whisper transcription provider started")
 
     async def _periodic_transcribe(self) -> None:
         """
         Periodically transcribe accumulated audio.
 
-        Runs every 2 seconds if there's audio in the buffer.
+        Runs at configured interval if there's enough audio in the buffer.
         """
         import io
-        import wave
 
         while self._is_active:
-            await asyncio.sleep(2.0)  # Transcribe every 2 seconds
+            await asyncio.sleep(self.transcribe_interval)
 
-            if len(self._audio_buffer) > 0:
-                # Create WAV file in memory
+            # Only transcribe if we have enough audio data
+            if len(self._audio_buffer) > self._min_audio_bytes:
+                # Copy and clear buffer atomically
                 audio_data = bytes(self._audio_buffer)
-                self._audio_buffer = bytearray()  # Clear buffer
+                self._audio_buffer = bytearray()
 
-                # Convert raw PCM to WAV format
-                wav_buffer = io.BytesIO()
-                with wave.open(wav_buffer, 'wb') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)  # 16-bit
-                    wav_file.setframerate(16000)
-                    wav_file.writeframes(audio_data)
-
-                wav_buffer.seek(0)
-                wav_buffer.name = "audio.wav"
+                # Create audio file in memory
+                # The browser sends webm/opus, which Whisper can handle directly
+                audio_buffer = io.BytesIO(audio_data)
+                audio_buffer.name = "audio.webm"  # Whisper accepts webm format
 
                 try:
                     # Call Whisper API
                     response = await self._client.audio.transcriptions.create(
                         model="whisper-1",
-                        file=wav_buffer,
+                        file=audio_buffer,
                         language="en"
                     )
 
-                    if response.text:
+                    if response.text and response.text.strip():
                         result = TranscriptionResult(
-                            text=response.text,
+                            text=response.text.strip(),
                             is_final=True,
                             confidence=1.0
                         )
                         await self._transcript_queue.put(result)
+                        print(f"Whisper transcribed: {response.text[:50]}...")
 
                 except Exception as e:
                     print(f"Whisper transcription error: {e}")
+                    # Don't lose the audio - put it back if transcription failed
+                    # (only for recoverable errors)
 
     async def send_audio(self, audio_data: bytes) -> None:
         """
@@ -424,16 +430,17 @@ def get_transcription_provider() -> TranscriptionProvider:
     """
     Get the configured transcription provider.
 
-    Returns Deepgram by default, falls back to Whisper if configured.
+    Returns Whisper by default (more reliable), can use Deepgram if configured.
     """
-    provider = os.getenv("TRANSCRIPTION_PROVIDER", "deepgram").lower()
+    provider = os.getenv("TRANSCRIPTION_PROVIDER", "whisper").lower()
 
-    if provider == "whisper":
-        return WhisperProvider()
-    else:
+    if provider == "deepgram":
         try:
             return DeepgramProvider()
         except ValueError:
             # Fall back to Whisper if Deepgram key not configured
             print("Deepgram API key not found, falling back to Whisper")
             return WhisperProvider()
+    else:
+        # Default to Whisper
+        return WhisperProvider()
