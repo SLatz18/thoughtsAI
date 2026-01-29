@@ -414,6 +414,7 @@ class SessionHandler:
         Process a thought with the AI.
 
         Gets conversation response and document updates.
+        Includes question tracking context for smarter responses.
         """
         if not self.ai_processor or not self.document_manager:
             return
@@ -425,21 +426,32 @@ class SessionHandler:
         })
 
         try:
-            # Get current document and conversation context
+            # Get current document structure (more efficient than full markdown)
             current_doc = self.document_manager.get_markdown()
+            doc_structure = self.document_manager.get_structure()
             recent_convos = self.conversation_context.get_recent_messages() if self.conversation_context else []
 
-            # Process with AI
+            # Get question tracking context
+            question_context = None
+            if self.conversation_context:
+                question_context = self.conversation_context.get_question_context()
+
+            # Process with AI - include question context and document structure
             response = await self.ai_processor.process_thought(
                 new_thought=thought,
                 current_document=current_doc,
-                recent_conversations=recent_convos
+                recent_conversations=recent_convos,
+                question_context=question_context,
+                document_structure=doc_structure
             )
 
-            # Update conversation context
+            # Update conversation context with extracted questions
             if self.conversation_context:
                 self.conversation_context.add_user_message(thought)
-                self.conversation_context.add_assistant_message(response.conversation)
+                self.conversation_context.add_assistant_message(
+                    response.conversation,
+                    questions=response.questions_asked
+                )
 
             # Save conversation to database
             if self.session_id:
@@ -450,7 +462,8 @@ class SessionHandler:
             if response.document_updates:
                 await self.document_manager.apply_updates(response.document_updates)
 
-            # Send response to client
+            # Send response to client (include pending questions for visibility)
+            pending_questions = self.conversation_context.get_pending_questions() if self.conversation_context else []
             await self._send_message({
                 "type": "ai_response",
                 "conversation": response.conversation,
@@ -463,6 +476,7 @@ class SessionHandler:
                     for u in response.document_updates
                 ],
                 "updated_document": self.document_manager.get_markdown(),
+                "pending_questions": pending_questions,
             })
 
         except Exception as e:

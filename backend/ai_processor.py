@@ -11,8 +11,10 @@ Uses Claude Sonnet 4 for optimal balance of quality and speed.
 import os
 import json
 import asyncio
+import re
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 import anthropic
 from dotenv import load_dotenv
@@ -20,6 +22,16 @@ from dotenv import load_dotenv
 from prompts import THINKING_PARTNER_SYSTEM_PROMPT, build_thinking_prompt
 
 load_dotenv()
+
+
+@dataclass
+class PendingQuestion:
+    """Represents a question asked by the AI that hasn't been answered yet."""
+    question: str
+    asked_at: datetime = field(default_factory=datetime.utcnow)
+    context: str = ""  # What topic/thought prompted this question
+    answered: bool = False
+    answer: str = ""
 
 
 @dataclass
@@ -48,6 +60,7 @@ class AIResponse:
     """
     conversation: str
     document_updates: list[DocumentUpdate]
+    questions_asked: list[str]  # Questions extracted from the response
     raw_response: str  # Original response for debugging
 
     @classmethod
@@ -59,9 +72,12 @@ class AIResponse:
                 DocumentUpdate.from_dict(u)
                 for u in data.get("document_updates", [])
             ]
+            conversation = data.get("conversation", "")
+            questions = cls._extract_questions(conversation)
             return cls(
-                conversation=data.get("conversation", ""),
+                conversation=conversation,
                 document_updates=updates,
+                questions_asked=questions,
                 raw_response=json_str
             )
         except json.JSONDecodeError as e:
@@ -69,8 +85,36 @@ class AIResponse:
             return cls(
                 conversation=f"I understood your thought. {json_str[:500]}",
                 document_updates=[],
+                questions_asked=[],
                 raw_response=json_str
             )
+
+    @staticmethod
+    def _extract_questions(text: str) -> list[str]:
+        """
+        Extract questions from the AI's response.
+
+        Looks for sentences ending with '?' to identify questions.
+        """
+        if not text:
+            return []
+
+        # Split into sentences and find questions
+        # Handle common patterns: sentences ending with ?, numbered questions, bullet questions
+        questions = []
+
+        # Pattern 1: Direct questions ending with ?
+        question_pattern = r'[^.!?\n]*\?'
+        matches = re.findall(question_pattern, text)
+
+        for match in matches:
+            question = match.strip()
+            # Clean up: remove leading numbers, bullets, dashes
+            question = re.sub(r'^[\d\.\)\-\*\•]+\s*', '', question)
+            if question and len(question) > 10:  # Filter out very short matches
+                questions.append(question)
+
+        return questions
 
 
 class AIProcessor:
@@ -99,24 +143,34 @@ class AIProcessor:
         self,
         new_thought: str,
         current_document: str,
-        recent_conversations: list[dict]
+        recent_conversations: list[dict],
+        question_context: dict = None,
+        document_structure: dict = None
     ) -> AIResponse:
         """
         Process a new thought from the user.
 
         Args:
             new_thought: The transcribed text from the user
-            current_document: Current markdown document content
+            current_document: Current markdown document content (or structured summary)
             recent_conversations: Recent conversation history
+            question_context: Dict with pending and recently answered questions
+            document_structure: Structured JSON of document sections (optional, preferred over markdown)
 
         Returns:
             AIResponse with conversation reply and document updates
         """
+        # Use structured document if available, otherwise fall back to markdown
+        doc_context = current_document
+        if document_structure:
+            doc_context = self._format_document_structure(document_structure)
+
         # Build the user prompt with context
         user_prompt = build_thinking_prompt(
-            current_document=current_document,
+            current_document=doc_context,
             recent_conversations=recent_conversations,
-            new_thought=new_thought
+            new_thought=new_thought,
+            question_context=question_context
         )
 
         # Try to get response with retries
@@ -175,6 +229,42 @@ class AIProcessor:
             return message.content[0].text
         return ""
 
+    def _format_document_structure(self, structure: dict) -> str:
+        """
+        Format document structure as a concise summary for the prompt.
+
+        Instead of sending full markdown, sends a structured overview
+        so Claude knows what sections exist and their purpose.
+        """
+        sections = structure.get("sections", [])
+        if not sections:
+            return "(Empty - this is a new session)"
+
+        lines = ["Current document sections:"]
+        for section in sections:
+            title = section.get("title", "Untitled")
+            content = section.get("content", "")
+            subsections = section.get("subsections", [])
+
+            # Create a brief summary of content
+            content_preview = ""
+            if content:
+                # Show first 100 chars or first 2 bullet points
+                content_lines = content.strip().split('\n')[:2]
+                content_preview = " | ".join(line.strip()[:50] for line in content_lines if line.strip())
+
+            # Format section info
+            subsection_names = [s.get("title", "") for s in subsections if s.get("title")]
+            if subsection_names:
+                lines.append(f"- **{title}** (subsections: {', '.join(subsection_names)})")
+            else:
+                lines.append(f"- **{title}**")
+
+            if content_preview:
+                lines.append(f"  Preview: {content_preview}...")
+
+        return "\n".join(lines)
+
     def _parse_response(self, response_text: str) -> AIResponse:
         """
         Parse Claude's response into structured AIResponse.
@@ -191,6 +281,7 @@ class AIProcessor:
             return AIResponse(
                 conversation=response_text,
                 document_updates=[],
+                questions_asked=AIResponse._extract_questions(response_text),
                 raw_response=response_text
             )
 
@@ -231,18 +322,23 @@ class AIProcessor:
 
         Still tries to be helpful even without AI processing.
         """
+        fallback_conversation = (
+            "I'm having trouble processing right now, but I heard your thought. "
+            "Could you tell me more about what's on your mind? "
+            "What feels most important about this?"
+        )
         return AIResponse(
-            conversation=(
-                "I'm having trouble processing right now, but I heard your thought. "
-                "Could you tell me more about what's on your mind? "
-                "What feels most important about this?"
-            ),
+            conversation=fallback_conversation,
             document_updates=[
                 DocumentUpdate(
                     action="add_to_section",
                     path="Unprocessed Thoughts",
                     content=f"- {thought}"
                 )
+            ],
+            questions_asked=[
+                "Could you tell me more about what's on your mind?",
+                "What feels most important about this?"
             ],
             raw_response=f"Error: {error}"
         )
@@ -252,37 +348,111 @@ class ConversationContext:
     """
     Manages conversation context for a session.
 
-    Keeps track of recent exchanges to provide context to Claude.
-    Limits history to prevent context window overflow.
+    Keeps track of recent exchanges and pending questions to provide
+    context to Claude. Tracks which questions have been answered.
     """
 
     def __init__(self, max_messages: int = 20):
         self.max_messages = max_messages
         self.messages: list[dict] = []
+        self.pending_questions: list[PendingQuestion] = []
+        self.answered_questions: list[PendingQuestion] = []
 
     def add_user_message(self, content: str) -> None:
-        """Add a user message to the context."""
+        """
+        Add a user message to the context.
+
+        Also checks if this message answers any pending questions.
+        """
         self.messages.append({
             "role": "user",
             "content": content
         })
         self._trim_history()
 
-    def add_assistant_message(self, content: str) -> None:
-        """Add an assistant message to the context."""
+        # Check if this response might answer pending questions
+        self._check_for_answers(content)
+
+    def add_assistant_message(self, content: str, questions: list[str] = None) -> None:
+        """
+        Add an assistant message to the context.
+
+        Args:
+            content: The assistant's response text
+            questions: List of questions extracted from the response
+        """
         self.messages.append({
             "role": "assistant",
             "content": content
         })
         self._trim_history()
 
+        # Track new questions
+        if questions:
+            for q in questions:
+                self.pending_questions.append(PendingQuestion(
+                    question=q,
+                    context=content[:100]  # Store brief context
+                ))
+
+    def _check_for_answers(self, user_message: str) -> None:
+        """
+        Check if the user's message might answer any pending questions.
+
+        Uses simple heuristics - if the user's response is substantial
+        and comes after questions, mark the oldest pending questions as
+        potentially answered.
+        """
+        if not self.pending_questions:
+            return
+
+        # If user provides a substantial response, assume they're answering
+        # the most recent questions
+        if len(user_message) > 20:
+            # Mark up to 3 oldest pending questions as answered
+            questions_to_answer = min(3, len(self.pending_questions))
+            for _ in range(questions_to_answer):
+                if self.pending_questions:
+                    q = self.pending_questions.pop(0)
+                    q.answered = True
+                    q.answer = user_message[:200]  # Store brief answer reference
+                    self.answered_questions.append(q)
+
+        # Keep only recent answered questions for context
+        if len(self.answered_questions) > 10:
+            self.answered_questions = self.answered_questions[-10:]
+
     def get_recent_messages(self, count: int = 10) -> list[dict]:
         """Get the most recent messages."""
         return self.messages[-count:]
 
+    def get_pending_questions(self) -> list[str]:
+        """Get list of questions that haven't been answered yet."""
+        return [q.question for q in self.pending_questions]
+
+    def get_recently_answered(self) -> list[dict]:
+        """Get recently answered questions with brief context."""
+        return [
+            {"question": q.question, "answered": True}
+            for q in self.answered_questions[-5:]
+        ]
+
+    def get_question_context(self) -> dict:
+        """
+        Get full question context for the prompt.
+
+        Returns dict with pending and recently answered questions.
+        """
+        return {
+            "pending": self.get_pending_questions(),
+            "recently_answered": [q.question for q in self.answered_questions[-3:]]
+        }
+
     def clear(self) -> None:
-        """Clear all conversation history."""
+        """Clear all conversation history and questions."""
         self.messages = []
+        self.pending_questions = []
+        self.answered_questions = []
 
     def _trim_history(self) -> None:
         """Trim history to max_messages."""

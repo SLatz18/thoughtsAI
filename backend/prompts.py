@@ -63,7 +63,8 @@ Remember: You're helping a busy professional think clearly. Be valuable, be conc
 def build_thinking_prompt(
     current_document: str,
     recent_conversations: list[dict],
-    new_thought: str
+    new_thought: str,
+    question_context: dict = None
 ) -> str:
     """
     Build the user message for Claude with context.
@@ -72,6 +73,7 @@ def build_thinking_prompt(
         current_document: The current markdown document content
         recent_conversations: List of recent conversation messages
         new_thought: The new transcript from the user
+        question_context: Dict with pending and recently answered questions
 
     Returns:
         Formatted prompt string
@@ -83,16 +85,38 @@ def build_thinking_prompt(
             role = "User" if msg["role"] == "user" else "Assistant"
             conversation_history += f"{role}: {msg['content']}\n\n"
 
+    # Format question tracking context
+    question_section = ""
+    if question_context:
+        pending = question_context.get("pending", [])
+        answered = question_context.get("recently_answered", [])
+
+        if pending:
+            question_section += "## Your Pending Questions (awaiting user response)\n"
+            for i, q in enumerate(pending, 1):
+                question_section += f"{i}. {q}\n"
+            question_section += "\n"
+
+        if answered:
+            question_section += "## Recently Answered Questions\n"
+            for q in answered:
+                question_section += f"- {q} (answered)\n"
+            question_section += "\n"
+
     prompt = f"""## Current Document Structure
 {current_document if current_document else "(Empty - this is a new session)"}
 
 ## Recent Conversation
 {conversation_history if conversation_history else "(Starting fresh conversation)"}
 
-## New Thought from User
+{question_section}## New Thought from User
 {new_thought}
 
-Based on this new thought, provide your response as JSON with "conversation" (your clarifying questions/response) and "document_updates" (how to update the document)."""
+IMPORTANT: First determine if this new thought is:
+1. A RESPONSE to one of your pending questions above - if so, acknowledge the answer and don't re-ask the same question
+2. A NEW TOPIC - only then should you ask new clarifying questions
+
+Based on this analysis, provide your response as JSON with "conversation" (your response/follow-up questions) and "document_updates" (how to update the document)."""
 
     return prompt
 
