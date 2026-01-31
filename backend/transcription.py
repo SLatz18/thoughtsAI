@@ -219,12 +219,13 @@ class WhisperProvider(TranscriptionProvider):
     Accumulates audio and transcribes periodically for near-real-time results.
 
     Configuration:
-    - Transcribes every 1.5 seconds for responsive feedback
-    - Minimum audio threshold to avoid empty transcriptions
+    - Transcribes every 2 seconds for responsive feedback
+    - Keeps full audio buffer (webm requires header from first chunk)
+    - Tracks previous transcription to only emit new content
     - Handles webm/opus audio format from browser MediaRecorder
     """
 
-    def __init__(self, transcribe_interval: float = 1.5):
+    def __init__(self, transcribe_interval: float = 2.0):
         self.api_key = os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
@@ -236,7 +237,10 @@ class WhisperProvider(TranscriptionProvider):
         self._transcribe_task = None
         self._client = None
         # Minimum bytes before attempting transcription (avoid empty audio)
-        self._min_audio_bytes = 1000
+        self._min_audio_bytes = 3000
+        # Track previous transcription to detect new content
+        self._last_transcript = ""
+        self._last_audio_size = 0
 
     async def start_stream(self) -> None:
         """Initialize the Whisper provider."""
@@ -245,6 +249,8 @@ class WhisperProvider(TranscriptionProvider):
         self._client = AsyncOpenAI(api_key=self.api_key)
         self._is_active = True
         self._audio_buffer = bytearray()
+        self._last_transcript = ""
+        self._last_audio_size = 0
 
         # Start periodic transcription task
         self._transcribe_task = asyncio.create_task(self._periodic_transcribe())
@@ -254,52 +260,99 @@ class WhisperProvider(TranscriptionProvider):
         """
         Periodically transcribe accumulated audio.
 
-        Runs at configured interval if there's enough audio in the buffer.
+        Sends the FULL audio buffer each time (webm needs header from start).
+        Compares with previous transcription to only emit new content.
         """
         import io
 
         while self._is_active:
             await asyncio.sleep(self.transcribe_interval)
 
-            # Only transcribe if we have enough audio data
-            if len(self._audio_buffer) > self._min_audio_bytes:
-                # Copy and clear buffer atomically
+            current_size = len(self._audio_buffer)
+
+            # Only transcribe if we have new audio data above threshold
+            if current_size > self._min_audio_bytes and current_size > self._last_audio_size:
+                # Copy the full buffer (don't clear - webm needs the header)
                 audio_data = bytes(self._audio_buffer)
-                self._audio_buffer = bytearray()
+                self._last_audio_size = current_size
 
                 # Create audio file in memory
-                # The browser sends webm/opus, which Whisper can handle directly
-                audio_buffer = io.BytesIO(audio_data)
-                audio_buffer.name = "audio.webm"  # Whisper accepts webm format
+                audio_file = io.BytesIO(audio_data)
+                audio_file.name = "audio.webm"
 
                 try:
-                    # Call Whisper API
+                    # Call Whisper API with full audio
                     response = await self._client.audio.transcriptions.create(
                         model="whisper-1",
-                        file=audio_buffer,
+                        file=audio_file,
                         language="en"
                     )
 
-                    if response.text and response.text.strip():
-                        result = TranscriptionResult(
-                            text=response.text.strip(),
-                            is_final=True,
-                            confidence=1.0
-                        )
-                        await self._transcript_queue.put(result)
-                        print(f"Whisper transcribed: {response.text[:50]}...")
+                    full_text = response.text.strip() if response.text else ""
+
+                    if full_text:
+                        # Find new content by comparing with previous transcript
+                        new_text = self._extract_new_content(full_text)
+
+                        if new_text:
+                            result = TranscriptionResult(
+                                text=new_text,
+                                is_final=True,
+                                confidence=1.0
+                            )
+                            await self._transcript_queue.put(result)
+                            print(f"Whisper new content: {new_text[:50]}...")
+
+                        self._last_transcript = full_text
 
                 except Exception as e:
                     print(f"Whisper transcription error: {e}")
-                    # Don't lose the audio - put it back if transcription failed
-                    # (only for recoverable errors)
+
+    def _extract_new_content(self, full_text: str) -> str:
+        """
+        Extract only the new content from full transcription.
+
+        Compares with previous transcription to find what's new.
+        Handles cases where Whisper might slightly modify earlier text.
+        """
+        if not self._last_transcript:
+            return full_text
+
+        # Simple approach: if full text starts with previous, return suffix
+        if full_text.startswith(self._last_transcript):
+            new_part = full_text[len(self._last_transcript):].strip()
+            return new_part
+
+        # If texts diverged, try to find overlap
+        # Look for the longest suffix of _last_transcript that matches a prefix of full_text
+        last_words = self._last_transcript.split()
+        full_words = full_text.split()
+
+        # Find where the new content starts
+        for i in range(len(last_words), 0, -1):
+            last_suffix = " ".join(last_words[-i:])
+            for j in range(min(i + 2, len(full_words)), 0, -1):
+                full_prefix = " ".join(full_words[:j])
+                if last_suffix == full_prefix:
+                    # Found overlap, return everything after
+                    new_content = " ".join(full_words[j:])
+                    return new_content.strip()
+
+        # If we can't find good overlap, check if there's clearly new content at end
+        if len(full_text) > len(self._last_transcript) * 1.1:
+            # Assume the extra content is new
+            # Use word-based comparison
+            if len(full_words) > len(last_words):
+                return " ".join(full_words[len(last_words):]).strip()
+
+        return ""
 
     async def send_audio(self, audio_data: bytes) -> None:
         """
         Accumulate audio data for batch transcription.
 
         Args:
-            audio_data: Raw PCM audio bytes (16-bit, 16kHz, mono)
+            audio_data: Audio bytes (webm/opus from browser MediaRecorder)
         """
         if self._is_active:
             self._audio_buffer.extend(audio_data)
