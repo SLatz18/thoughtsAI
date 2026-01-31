@@ -145,7 +145,8 @@ class AIProcessor:
         current_document: str,
         recent_conversations: list[dict],
         question_context: dict = None,
-        document_structure: dict = None
+        document_structure: dict = None,
+        full_transcript: str = None
     ) -> AIResponse:
         """
         Process a new thought from the user.
@@ -156,6 +157,7 @@ class AIProcessor:
             recent_conversations: Recent conversation history
             question_context: Dict with pending and recently answered questions
             document_structure: Structured JSON of document sections (optional, preferred over markdown)
+            full_transcript: Complete transcript of the session for context
 
         Returns:
             AIResponse with conversation reply and document updates
@@ -170,7 +172,8 @@ class AIProcessor:
             current_document=doc_context,
             recent_conversations=recent_conversations,
             new_thought=new_thought,
-            question_context=question_context
+            question_context=question_context,
+            full_transcript=full_transcript
         )
 
         # Try to get response with retries
