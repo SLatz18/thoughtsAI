@@ -64,9 +64,26 @@ PAUSE_THRESHOLD_MS = int(os.getenv("PAUSE_THRESHOLD_MS", 2000))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
-    # Startup: Initialize database
-    await init_db()
-    print("Database initialized")
+    # Startup: Initialize database with retry logic
+    # Railway may take a moment for the database to be ready
+    max_retries = 5
+    retry_delay = 2
+
+    for attempt in range(max_retries):
+        try:
+            await init_db()
+            print("Database initialized successfully")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"Database connection failed (attempt {attempt + 1}/{max_retries}): {e}")
+                print(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                print(f"Could not connect to database after {max_retries} attempts: {e}")
+                print("App will start but database features may not work")
+
     yield
     # Shutdown: Cleanup if needed
     print("Shutting down")
