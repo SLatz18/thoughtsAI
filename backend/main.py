@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from dotenv import load_dotenv
 
 from database import (
@@ -68,6 +69,13 @@ async def lifespan(app: FastAPI):
     # Railway may take a moment for the database to be ready
     max_retries = 5
     retry_delay = 2
+
+    # Log environment for debugging
+    db_url = os.getenv("DATABASE_URL", "")
+    print(f"Starting app with DATABASE_URL set: {bool(db_url)}")
+    if "localhost" in db_url or "127.0.0.1" in db_url:
+        print("WARNING: DATABASE_URL contains localhost - this won't work on Railway!")
+        print("Please use Railway's PostgreSQL reference variable")
 
     for attempt in range(max_retries):
         try:
@@ -149,8 +157,31 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "thinking-partner"}
+    """Health check endpoint with database status."""
+    db_status = "unknown"
+    db_error = None
+
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+            db_status = "connected"
+    except Exception as e:
+        db_status = "error"
+        db_error = str(e)
+
+    # Check if DATABASE_URL is properly set
+    db_url = os.getenv("DATABASE_URL", "")
+    url_status = "set" if db_url else "missing"
+    if "localhost" in db_url or "127.0.0.1" in db_url:
+        url_status = "localhost (wrong for Railway)"
+
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "service": "thinking-partner",
+        "database": db_status,
+        "database_url_status": url_status,
+        "database_error": db_error,
+    }
 
 
 @app.get("/api/documents")

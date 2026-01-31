@@ -28,13 +28,30 @@ def get_database_url() -> str:
     Railway provides DATABASE_URL as postgres://... but asyncpg requires
     postgresql+asyncpg://... format.
     """
-    url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/thinking_partner")
+    url = os.getenv("DATABASE_URL", "")
+
+    # Log for debugging (mask password)
+    if url:
+        masked_url = url
+        if "@" in url and "://" in url:
+            # Mask password in URL for logging
+            parts = url.split("@")
+            prefix = parts[0]
+            if ":" in prefix.split("://")[1]:
+                user_part = prefix.split("://")[1].split(":")[0]
+                masked_url = f"{prefix.split('://')[0]}://{user_part}:****@{parts[1]}"
+        print(f"DATABASE_URL configured: {masked_url}")
+    else:
+        print("WARNING: DATABASE_URL not set, using default localhost connection")
+        url = "postgresql+asyncpg://postgres:postgres@localhost:5432/thinking_partner"
 
     # Convert Railway's postgres:// to postgresql+asyncpg://
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        print("Converted postgres:// to postgresql+asyncpg://")
     elif url.startswith("postgresql://") and "+asyncpg" not in url:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        print("Converted postgresql:// to postgresql+asyncpg://")
 
     return url
 
