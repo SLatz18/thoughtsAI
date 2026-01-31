@@ -238,9 +238,13 @@ class WhisperProvider(TranscriptionProvider):
         self._client = None
         # Minimum bytes before attempting transcription (avoid empty audio)
         self._min_audio_bytes = 3000
+        # Maximum buffer size (25MB - about 5 minutes of audio)
+        self._max_audio_bytes = 25 * 1024 * 1024
         # Track previous transcription to detect new content
         self._last_transcript = ""
+        self._full_session_transcript = ""  # Complete transcript for the session
         self._last_audio_size = 0
+        self._transcribe_count = 0
 
     async def start_stream(self) -> None:
         """Initialize the Whisper provider."""
@@ -250,7 +254,9 @@ class WhisperProvider(TranscriptionProvider):
         self._is_active = True
         self._audio_buffer = bytearray()
         self._last_transcript = ""
+        self._full_session_transcript = ""
         self._last_audio_size = 0
+        self._transcribe_count = 0
 
         # Start periodic transcription task
         self._transcribe_task = asyncio.create_task(self._periodic_transcribe())
@@ -270,11 +276,23 @@ class WhisperProvider(TranscriptionProvider):
 
             current_size = len(self._audio_buffer)
 
+            # Check if buffer is too large - if so, we need to reset
+            if current_size > self._max_audio_bytes:
+                print(f"Audio buffer exceeded max size ({current_size} bytes), resetting...")
+                # Save the current full transcript before resetting
+                if self._last_transcript:
+                    self._full_session_transcript += " " + self._last_transcript
+                self._audio_buffer = bytearray()
+                self._last_transcript = ""
+                self._last_audio_size = 0
+                continue
+
             # Only transcribe if we have new audio data above threshold
             if current_size > self._min_audio_bytes and current_size > self._last_audio_size:
                 # Copy the full buffer (don't clear - webm needs the header)
                 audio_data = bytes(self._audio_buffer)
                 self._last_audio_size = current_size
+                self._transcribe_count += 1
 
                 # Create audio file in memory
                 audio_file = io.BytesIO(audio_data)
@@ -289,6 +307,7 @@ class WhisperProvider(TranscriptionProvider):
                     )
 
                     full_text = response.text.strip() if response.text else ""
+                    print(f"Whisper #{self._transcribe_count}: '{full_text[:80]}...' ({len(full_text)} chars)")
 
                     if full_text:
                         # Find new content by comparing with previous transcript
@@ -301,7 +320,9 @@ class WhisperProvider(TranscriptionProvider):
                                 confidence=1.0
                             )
                             await self._transcript_queue.put(result)
-                            print(f"Whisper new content: {new_text[:50]}...")
+                            print(f"Whisper emitting new: '{new_text[:50]}...'")
+                        else:
+                            print(f"Whisper: no new content detected")
 
                         self._last_transcript = full_text
 
@@ -312,38 +333,50 @@ class WhisperProvider(TranscriptionProvider):
         """
         Extract only the new content from full transcription.
 
-        Compares with previous transcription to find what's new.
-        Handles cases where Whisper might slightly modify earlier text.
+        Uses word-by-word comparison to handle Whisper's variations.
+        More lenient matching to avoid missing content.
         """
         if not self._last_transcript:
             return full_text
 
-        # Simple approach: if full text starts with previous, return suffix
-        if full_text.startswith(self._last_transcript):
-            new_part = full_text[len(self._last_transcript):].strip()
-            return new_part
+        # Normalize texts for comparison
+        def normalize(text: str) -> list:
+            # Remove punctuation and lowercase for comparison
+            import re
+            words = re.findall(r'\b\w+\b', text.lower())
+            return words
 
-        # If texts diverged, try to find overlap
-        # Look for the longest suffix of _last_transcript that matches a prefix of full_text
-        last_words = self._last_transcript.split()
-        full_words = full_text.split()
+        last_words_normalized = normalize(self._last_transcript)
+        full_words_normalized = normalize(full_text)
+        full_words_original = full_text.split()
 
-        # Find where the new content starts
-        for i in range(len(last_words), 0, -1):
-            last_suffix = " ".join(last_words[-i:])
-            for j in range(min(i + 2, len(full_words)), 0, -1):
-                full_prefix = " ".join(full_words[:j])
-                if last_suffix == full_prefix:
-                    # Found overlap, return everything after
-                    new_content = " ".join(full_words[j:])
-                    return new_content.strip()
+        # If new transcription is shorter or same, nothing new
+        if len(full_words_normalized) <= len(last_words_normalized):
+            return ""
 
-        # If we can't find good overlap, check if there's clearly new content at end
-        if len(full_text) > len(self._last_transcript) * 1.1:
-            # Assume the extra content is new
-            # Use word-based comparison
-            if len(full_words) > len(last_words):
-                return " ".join(full_words[len(last_words):]).strip()
+        # Find longest common prefix (allowing for small variations)
+        common_prefix_len = 0
+        mismatches = 0
+        max_mismatches = 2  # Allow a couple of mismatches
+
+        for i in range(min(len(last_words_normalized), len(full_words_normalized))):
+            if last_words_normalized[i] == full_words_normalized[i]:
+                common_prefix_len = i + 1
+                mismatches = 0
+            else:
+                mismatches += 1
+                if mismatches > max_mismatches:
+                    break
+
+        # Return everything after the common prefix
+        if common_prefix_len > 0 and len(full_words_original) > common_prefix_len:
+            new_content = " ".join(full_words_original[common_prefix_len:])
+            return new_content.strip()
+
+        # Fallback: if we have more words, return the extra ones
+        if len(full_words_original) > len(last_words_normalized):
+            new_content = " ".join(full_words_original[len(last_words_normalized):])
+            return new_content.strip()
 
         return ""
 
