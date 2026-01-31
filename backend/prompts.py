@@ -67,7 +67,8 @@ def build_thinking_prompt(
     current_document: str,
     recent_conversations: list[dict],
     new_thought: str,
-    question_context: dict = None
+    question_context: dict = None,
+    full_transcript: str = None
 ) -> str:
     """
     Build the user message for Claude with context.
@@ -77,6 +78,7 @@ def build_thinking_prompt(
         recent_conversations: List of recent conversation messages
         new_thought: The new transcript from the user
         question_context: Dict with pending and recently answered questions
+        full_transcript: The complete transcript of the session so far
 
     Returns:
         Formatted prompt string
@@ -106,20 +108,29 @@ def build_thinking_prompt(
                 question_section += f"- {q} (answered)\n"
             question_section += "\n"
 
+    # Include full transcript for context if available
+    transcript_section = ""
+    if full_transcript and full_transcript.strip():
+        # Truncate if too long, keeping most recent
+        if len(full_transcript) > 2000:
+            transcript_section = f"## Full Session Transcript (truncated)\n...{full_transcript[-2000:]}\n\n"
+        else:
+            transcript_section = f"## Full Session Transcript\n{full_transcript}\n\n"
+
     prompt = f"""## Current Document Structure
 {current_document if current_document else "(Empty - this is a new session)"}
 
 ## Recent Conversation
 {conversation_history if conversation_history else "(Starting fresh conversation)"}
 
-{question_section}## New Thought from User
+{transcript_section}{question_section}## New Thought from User
 {new_thought}
 
-IMPORTANT: First determine if this new thought is:
-1. A RESPONSE to one of your pending questions above - if so, acknowledge the answer and don't re-ask the same question
-2. A NEW TOPIC - only then should you ask new clarifying questions
-
-Based on this analysis, provide your response as JSON with "conversation" (your response/follow-up questions) and "document_updates" (how to update the document)."""
+IMPORTANT:
+- The user is speaking their thoughts out loud via voice transcription
+- Engage with the ACTUAL CONTENT of what they said - do NOT ask "what would you like to think through?" or similar
+- If they're discussing a topic (like organizing tasks, making decisions, etc.), engage with THAT topic
+- Provide your response as JSON with "conversation" (your response/follow-up questions) and "document_updates" (how to update the document)."""
 
     return prompt
 

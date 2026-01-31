@@ -335,9 +335,10 @@ class WhisperProvider(TranscriptionProvider):
         """
         Extract only the new content from full transcription.
 
-        Two-step approach:
-        1. Use prefix matching to find candidate new content
-        2. Filter out any phrases that have already been emitted (duplicate detection)
+        Three-step approach:
+        1. Filter out Whisper hallucinations (repeated words, common false positives)
+        2. Use prefix matching to find candidate new content
+        3. Filter out any phrases that have already been emitted (duplicate detection)
         """
         import re
 
@@ -345,13 +346,33 @@ class WhisperProvider(TranscriptionProvider):
             """Normalize text for comparison - lowercase, remove punctuation."""
             return re.sub(r'[^\w\s]', '', text.lower()).strip()
 
-        def get_word_ngrams(words: list, n: int = 5) -> set:
-            """Get all n-grams of words for duplicate detection."""
-            ngrams = set()
-            for i in range(len(words) - n + 1):
-                ngram = " ".join(words[i:i+n])
-                ngrams.add(normalize_phrase(ngram))
-            return ngrams
+        def filter_hallucinations(text: str) -> str:
+            """Filter out common Whisper hallucinations."""
+            # Remove repeated words (e.g., "Bye! Bye! Bye! Bye!" -> "Bye!")
+            # Pattern: word repeated 3+ times in a row
+            text = re.sub(r'\b(\w+)(?:\s+\1){2,}\b', r'\1', text, flags=re.IGNORECASE)
+
+            # Remove common Whisper hallucination phrases
+            hallucination_patterns = [
+                r'\bbye\b.*\bbye\b.*\bbye\b',  # Multiple byes
+                r'\bthank you for watching\b',
+                r'\bsubscribe\b.*\blike\b',
+                r'\bplease subscribe\b',
+                r'\bsee you (next time|tomorrow|then)\b.*\bbye\b',
+                r'\bthanks for listening\b',
+            ]
+            for pattern in hallucination_patterns:
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+            # Clean up extra whitespace
+            text = re.sub(r'\s+', ' ', text).strip()
+            return text
+
+        # First, filter hallucinations from the full text
+        full_text = filter_hallucinations(full_text)
+
+        if not full_text:
+            return ""
 
         if not self._last_transcript:
             # First transcription - emit all but track phrases
@@ -395,6 +416,12 @@ class WhisperProvider(TranscriptionProvider):
         if not candidate_words:
             return ""
 
+        # Filter hallucinations from candidate content too
+        candidate_text = filter_hallucinations(" ".join(candidate_words))
+        if not candidate_text:
+            return ""
+        candidate_words = candidate_text.split()
+
         # DUPLICATE DETECTION: Filter out phrases we've already emitted
         # Check each 5-word window against emitted phrases
         filtered_words = []
@@ -431,6 +458,9 @@ class WhisperProvider(TranscriptionProvider):
             return ""
 
         new_content = " ".join(filtered_words).strip()
+
+        # Final hallucination filter on output
+        new_content = filter_hallucinations(new_content)
 
         # Track these new phrases as emitted
         if new_content:

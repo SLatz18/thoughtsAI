@@ -484,13 +484,14 @@ class SessionHandler:
             if self.conversation_context:
                 question_context = self.conversation_context.get_question_context()
 
-            # Process with AI - include question context and document structure
+            # Process with AI - include question context, document structure, and full transcript
             response = await self.ai_processor.process_thought(
                 new_thought=thought,
                 current_document=current_doc,
                 recent_conversations=recent_convos,
                 question_context=question_context,
-                document_structure=doc_structure
+                document_structure=doc_structure,
+                full_transcript=self.full_transcript
             )
 
             # Update conversation context with extracted questions
