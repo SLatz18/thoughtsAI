@@ -50,7 +50,12 @@
                     <div class="panel transcript-panel">
                         <div class="panel-header">
                             <h2>Live Transcript</h2>
-                            <span class="badge" id="transcriptBadge">0 words</span>
+                            <div class="panel-actions">
+                                <span class="badge" id="transcriptBadge">0 words</span>
+                                <button class="btn btn-icon copy-btn" id="copyTranscriptBtn" title="Copy transcript">
+                                    <span>📋</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="panel-content" id="transcriptContent">
                             <p class="placeholder-text">Your thoughts will appear here as you speak...</p>
@@ -75,9 +80,14 @@
                     <div class="panel ai-panel">
                         <div class="panel-header">
                             <h2>AI Partner</h2>
-                            <div class="processing-indicator hidden" id="processingIndicator">
-                                <div class="spinner"></div>
-                                <span>Thinking...</span>
+                            <div class="panel-actions">
+                                <div class="processing-indicator hidden" id="processingIndicator">
+                                    <div class="spinner"></div>
+                                    <span>Thinking...</span>
+                                </div>
+                                <button class="btn btn-icon copy-btn" id="copyAiBtn" title="Copy AI responses">
+                                    <span>📋</span>
+                                </button>
                             </div>
                         </div>
                         <div class="panel-content" id="aiResponseContent">
@@ -91,9 +101,14 @@
                     <div class="panel document-panel">
                         <div class="panel-header">
                             <h2>Organized Notes</h2>
-                            <button class="btn btn-icon" id="toggleDocBtn" title="Toggle view">
-                                <span id="toggleIcon">📄</span>
-                            </button>
+                            <div class="panel-actions">
+                                <button class="btn btn-icon copy-btn" id="copyDocBtn" title="Copy notes">
+                                    <span>📋</span>
+                                </button>
+                                <button class="btn btn-icon" id="toggleDocBtn" title="Toggle view">
+                                    <span id="toggleIcon">📄</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="panel-content document-content" id="documentContent">
                             <p class="placeholder-text">Your thoughts will be organized here as sections...</p>

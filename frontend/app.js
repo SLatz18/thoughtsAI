@@ -55,6 +55,9 @@ const elements = {
     exportBtn: document.getElementById('exportBtn'),
     sendTextBtn: document.getElementById('sendTextBtn'),
     toggleDocBtn: document.getElementById('toggleDocBtn'),
+    copyTranscriptBtn: document.getElementById('copyTranscriptBtn'),
+    copyAiBtn: document.getElementById('copyAiBtn'),
+    copyDocBtn: document.getElementById('copyDocBtn'),
 
     // Inputs
     textInput: document.getElementById('textInput'),
@@ -751,6 +754,36 @@ elements.toggleDocBtn.addEventListener('click', () => {
     panel.classList.toggle('collapsed');
     elements.toggleDocBtn.querySelector('span').textContent =
         panel.classList.contains('collapsed') ? '📄' : '📑';
+});
+
+// Copy buttons for each panel
+async function copyPanelContent(button, content) {
+    try {
+        await navigator.clipboard.writeText(content);
+        const originalText = button.querySelector('span').textContent;
+        button.querySelector('span').textContent = '✓';
+        button.classList.add('copied');
+        setTimeout(() => {
+            button.querySelector('span').textContent = originalText;
+            button.classList.remove('copied');
+        }, 1500);
+    } catch (e) {
+        showError('Failed to copy to clipboard');
+    }
+}
+
+elements.copyTranscriptBtn.addEventListener('click', () => {
+    copyPanelContent(elements.copyTranscriptBtn, state.transcript || 'No transcript yet');
+});
+
+elements.copyAiBtn.addEventListener('click', () => {
+    // Get all AI responses as text
+    const responses = state.aiResponses.map(r => r.conversation).join('\n\n---\n\n');
+    copyPanelContent(elements.copyAiBtn, responses || 'No AI responses yet');
+});
+
+elements.copyDocBtn.addEventListener('click', () => {
+    copyPanelContent(elements.copyDocBtn, state.document || 'No notes yet');
 });
 
 // Keep-alive ping every 30 seconds
