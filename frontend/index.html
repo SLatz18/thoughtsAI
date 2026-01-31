@@ -3,12 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#0f0f23">
     <meta name="description" content="AI-powered thinking partner for busy professionals">
     <title>Thinking Partner</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
 </head>
 <body>
+    <!-- Animated Aurora Background -->
+    <div class="aurora-bg"></div>
+
+    <!-- Floating Neural Orbs -->
+    <div class="neural-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div class="orb orb-4"></div>
+    </div>
+
     <div class="app-container">
         <!-- Header -->
         <header class="header">
@@ -30,6 +42,19 @@
                     <span>Ready to start</span>
                 </div>
 
+                <!-- Sound Wave Visualizer -->
+                <div class="sound-wave" id="soundWave">
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                </div>
+
                 <button id="sessionBtn" class="btn btn-primary btn-large">
                     <span class="icon">🎙️</span>
                     Start Thinking Session
@@ -38,7 +63,7 @@
                 <!-- Recording indicator -->
                 <div class="recording-indicator hidden" id="recordingIndicator">
                     <div class="pulse-ring"></div>
-                    <span>Listening...</span>
+                    <span>Listening</span>
                 </div>
             </section>
 
@@ -77,7 +102,7 @@
                             <h2>AI Partner</h2>
                             <div class="processing-indicator hidden" id="processingIndicator">
                                 <div class="spinner"></div>
-                                <span>Thinking...</span>
+                                <span>Thinking</span>
                             </div>
                         </div>
                         <div class="panel-content" id="aiResponseContent">
@@ -105,7 +130,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Built for busy professionals who need to think clearly</p>
+            <p>Built for professionals who need to think clearly</p>
         </footer>
 
         <!-- Error Toast -->

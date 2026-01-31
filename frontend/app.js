@@ -64,6 +64,7 @@ const elements = {
     recordingIndicator: document.getElementById('recordingIndicator'),
     processingIndicator: document.getElementById('processingIndicator'),
     transcriptBadge: document.getElementById('transcriptBadge'),
+    soundWave: document.getElementById('soundWave'),
 
     // Content areas
     transcriptContent: document.getElementById('transcriptContent'),
@@ -262,6 +263,7 @@ function endSession() {
     elements.textInput.disabled = true;
     elements.sendTextBtn.disabled = true;
     elements.recordingIndicator.classList.add('hidden');
+    elements.soundWave.classList.remove('active');
 
     updateSessionStatus('ended', 'Session ended');
 }
@@ -281,8 +283,9 @@ function handleSessionStarted(message) {
     // Start audio recording
     startAudioCapture();
 
-    // Show recording indicator
+    // Show recording indicator and sound wave
     elements.recordingIndicator.classList.remove('hidden');
+    elements.soundWave.classList.add('active');
 
     // Update document if provided
     if (message.document) {
