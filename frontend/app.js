@@ -658,12 +658,16 @@ function escapeHtml(text) {
 
 /**
  * Basic markdown formatting.
+ * SECURITY: Escapes HTML first to prevent XSS attacks.
  */
 function formatMarkdown(text) {
     if (!text) return '';
 
-    return text
-        // Headers
+    // SECURITY: Escape HTML first to prevent XSS
+    let escaped = escapeHtml(text);
+
+    return escaped
+        // Headers (using escaped &gt; etc won't match, so we use word boundaries)
         .replace(/^### (.+)$/gm, '<h4>$1</h4>')
         .replace(/^## (.+)$/gm, '<h3>$1</h3>')
         .replace(/^# (.+)$/gm, '<h2>$1</h2>')
