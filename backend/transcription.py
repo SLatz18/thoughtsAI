@@ -334,33 +334,32 @@ class WhisperProvider(TranscriptionProvider):
         Extract only the new content from full transcription.
 
         Uses word-by-word comparison to handle Whisper's variations.
-        More lenient matching to avoid missing content.
+        IMPORTANT: Uses consistent split() tokenization for both comparison
+        and extraction to avoid index misalignment.
         """
         if not self._last_transcript:
             return full_text
 
-        # Normalize texts for comparison
-        def normalize(text: str) -> list:
-            # Remove punctuation and lowercase for comparison
-            import re
-            words = re.findall(r'\b\w+\b', text.lower())
-            return words
-
-        last_words_normalized = normalize(self._last_transcript)
-        full_words_normalized = normalize(full_text)
-        full_words_original = full_text.split()
+        # Use split() consistently for BOTH comparison and extraction
+        # This ensures indices align properly
+        last_words = self._last_transcript.split()
+        full_words = full_text.split()
 
         # If new transcription is shorter or same, nothing new
-        if len(full_words_normalized) <= len(last_words_normalized):
+        if len(full_words) <= len(last_words):
             return ""
+
+        # Normalize for comparison only (lowercase, strip edge punctuation)
+        def normalize_word(w: str) -> str:
+            return w.lower().strip('.,!?;:\'"()[]{}')
 
         # Find longest common prefix (allowing for small variations)
         common_prefix_len = 0
         mismatches = 0
         max_mismatches = 2  # Allow a couple of mismatches
 
-        for i in range(min(len(last_words_normalized), len(full_words_normalized))):
-            if last_words_normalized[i] == full_words_normalized[i]:
+        for i in range(min(len(last_words), len(full_words))):
+            if normalize_word(last_words[i]) == normalize_word(full_words[i]):
                 common_prefix_len = i + 1
                 mismatches = 0
             else:
@@ -369,13 +368,14 @@ class WhisperProvider(TranscriptionProvider):
                     break
 
         # Return everything after the common prefix
-        if common_prefix_len > 0 and len(full_words_original) > common_prefix_len:
-            new_content = " ".join(full_words_original[common_prefix_len:])
-            return new_content.strip()
+        if common_prefix_len > 0:
+            new_content = " ".join(full_words[common_prefix_len:])
+            if new_content.strip():
+                return new_content.strip()
 
         # Fallback: if we have more words, return the extra ones
-        if len(full_words_original) > len(last_words_normalized):
-            new_content = " ".join(full_words_original[len(last_words_normalized):])
+        if len(full_words) > len(last_words):
+            new_content = " ".join(full_words[len(last_words):])
             return new_content.strip()
 
         return ""
