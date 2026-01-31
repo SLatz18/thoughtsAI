@@ -278,6 +278,26 @@ body {
     color: var(--text-primary);
 }
 
+.panel-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.copy-btn {
+    opacity: 0.6;
+    transition: var(--transition-fast);
+}
+
+.copy-btn:hover {
+    opacity: 1;
+}
+
+.copy-btn.copied {
+    opacity: 1;
+    color: var(--accent-success);
+}
+
 .panel-content {
     flex: 1;
     padding: var(--spacing-md);

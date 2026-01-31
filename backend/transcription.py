@@ -243,6 +243,7 @@ class WhisperProvider(TranscriptionProvider):
         # Track previous transcription to detect new content
         self._last_transcript = ""
         self._full_session_transcript = ""  # Complete transcript for the session
+        self._emitted_phrases: set[str] = set()  # Track emitted phrases to prevent duplicates
         self._last_audio_size = 0
         self._transcribe_count = 0
 
@@ -255,6 +256,7 @@ class WhisperProvider(TranscriptionProvider):
         self._audio_buffer = bytearray()
         self._last_transcript = ""
         self._full_session_transcript = ""
+        self._emitted_phrases = set()
         self._last_audio_size = 0
         self._transcribe_count = 0
 
@@ -333,15 +335,30 @@ class WhisperProvider(TranscriptionProvider):
         """
         Extract only the new content from full transcription.
 
-        Uses word-by-word comparison to handle Whisper's variations.
-        IMPORTANT: Uses consistent split() tokenization for both comparison
-        and extraction to avoid index misalignment.
+        Two-step approach:
+        1. Use prefix matching to find candidate new content
+        2. Filter out any phrases that have already been emitted (duplicate detection)
         """
+        import re
+
+        def normalize_phrase(text: str) -> str:
+            """Normalize text for comparison - lowercase, remove punctuation."""
+            return re.sub(r'[^\w\s]', '', text.lower()).strip()
+
+        def get_word_ngrams(words: list, n: int = 5) -> set:
+            """Get all n-grams of words for duplicate detection."""
+            ngrams = set()
+            for i in range(len(words) - n + 1):
+                ngram = " ".join(words[i:i+n])
+                ngrams.add(normalize_phrase(ngram))
+            return ngrams
+
         if not self._last_transcript:
+            # First transcription - emit all but track phrases
+            self._add_emitted_phrases(full_text)
             return full_text
 
-        # Use split() consistently for BOTH comparison and extraction
-        # This ensures indices align properly
+        # Use split() consistently for comparison and extraction
         last_words = self._last_transcript.split()
         full_words = full_text.split()
 
@@ -356,7 +373,7 @@ class WhisperProvider(TranscriptionProvider):
         # Find longest common prefix (allowing for small variations)
         common_prefix_len = 0
         mismatches = 0
-        max_mismatches = 2  # Allow a couple of mismatches
+        max_mismatches = 2
 
         for i in range(min(len(last_words), len(full_words))):
             if normalize_word(last_words[i]) == normalize_word(full_words[i]):
@@ -367,18 +384,73 @@ class WhisperProvider(TranscriptionProvider):
                 if mismatches > max_mismatches:
                     break
 
-        # Return everything after the common prefix
+        # Get candidate new content
         if common_prefix_len > 0:
-            new_content = " ".join(full_words[common_prefix_len:])
-            if new_content.strip():
-                return new_content.strip()
+            candidate_words = full_words[common_prefix_len:]
+        elif len(full_words) > len(last_words):
+            candidate_words = full_words[len(last_words):]
+        else:
+            return ""
 
-        # Fallback: if we have more words, return the extra ones
-        if len(full_words) > len(last_words):
-            new_content = " ".join(full_words[len(last_words):])
-            return new_content.strip()
+        if not candidate_words:
+            return ""
 
-        return ""
+        # DUPLICATE DETECTION: Filter out phrases we've already emitted
+        # Check each 5-word window against emitted phrases
+        filtered_words = []
+        i = 0
+        while i < len(candidate_words):
+            # Get a window of words starting at position i
+            window_size = min(5, len(candidate_words) - i)
+            window = candidate_words[i:i + window_size]
+            window_phrase = normalize_phrase(" ".join(window))
+
+            # Check if this phrase (or similar) was already emitted
+            is_duplicate = False
+            if window_size >= 4:  # Only check windows of 4+ words
+                for emitted in self._emitted_phrases:
+                    if window_phrase in emitted or emitted in window_phrase:
+                        is_duplicate = True
+                        break
+                    # Also check if most words match (fuzzy)
+                    window_words = set(window_phrase.split())
+                    emitted_words = set(emitted.split())
+                    if len(window_words) >= 4 and len(window_words & emitted_words) >= len(window_words) - 1:
+                        is_duplicate = True
+                        break
+
+            if is_duplicate:
+                # Skip this phrase - move past the duplicate
+                i += window_size
+            else:
+                # Keep this word
+                filtered_words.append(candidate_words[i])
+                i += 1
+
+        if not filtered_words:
+            return ""
+
+        new_content = " ".join(filtered_words).strip()
+
+        # Track these new phrases as emitted
+        if new_content:
+            self._add_emitted_phrases(new_content)
+
+        return new_content
+
+    def _add_emitted_phrases(self, text: str) -> None:
+        """Add phrases from text to the emitted set for duplicate detection."""
+        import re
+        words = text.split()
+        # Add 5-word phrases
+        for i in range(len(words) - 4):
+            phrase = " ".join(words[i:i+5])
+            normalized = re.sub(r'[^\w\s]', '', phrase.lower()).strip()
+            self._emitted_phrases.add(normalized)
+        # Limit size to prevent memory issues
+        if len(self._emitted_phrases) > 1000:
+            # Keep most recent half
+            self._emitted_phrases = set(list(self._emitted_phrases)[-500:])
 
     async def send_audio(self, audio_data: bytes) -> None:
         """
