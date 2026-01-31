@@ -12,6 +12,7 @@ import os
 import asyncio
 import json
 import base64
+import logging
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator, Callable, Optional
 from datetime import datetime
@@ -19,6 +20,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriptionResult:
@@ -165,7 +168,7 @@ class DeepgramProvider(TranscriptionProvider):
 
         except Exception as e:
             # Log error and put sentinel to signal closure
-            print(f"Deepgram receive error: {e}")
+            logger.error(f"Deepgram receive error: {e}")
             self._is_connected = False
 
     async def send_audio(self, audio_data: bytes) -> None:
@@ -179,7 +182,7 @@ class DeepgramProvider(TranscriptionProvider):
             try:
                 await self._websocket.send(audio_data)
             except Exception as e:
-                print(f"Error sending audio to Deepgram: {e}")
+                logger.error(f"Error sending audio to Deepgram: {e}")
                 self._is_connected = False
 
     async def receive_transcripts(self) -> AsyncGenerator[TranscriptionResult, None]:
@@ -262,7 +265,7 @@ class WhisperProvider(TranscriptionProvider):
 
         # Start periodic transcription task
         self._transcribe_task = asyncio.create_task(self._periodic_transcribe())
-        print("Whisper transcription provider started")
+        logger.info("Whisper transcription provider started")
 
     async def _periodic_transcribe(self) -> None:
         """
@@ -280,7 +283,7 @@ class WhisperProvider(TranscriptionProvider):
 
             # Check if buffer is too large - if so, we need to reset
             if current_size > self._max_audio_bytes:
-                print(f"Audio buffer exceeded max size ({current_size} bytes), resetting...")
+                logger.warning(f"Audio buffer exceeded max size ({current_size} bytes), resetting...")
                 # Save the current full transcript before resetting
                 if self._last_transcript:
                     self._full_session_transcript += " " + self._last_transcript
@@ -309,7 +312,7 @@ class WhisperProvider(TranscriptionProvider):
                     )
 
                     full_text = response.text.strip() if response.text else ""
-                    print(f"Whisper #{self._transcribe_count}: '{full_text[:80]}...' ({len(full_text)} chars)")
+                    logger.debug(f"Whisper #{self._transcribe_count}: '{full_text[:80]}...' ({len(full_text)} chars)")
 
                     if full_text:
                         # Find new content by comparing with previous transcript
@@ -322,14 +325,14 @@ class WhisperProvider(TranscriptionProvider):
                                 confidence=1.0
                             )
                             await self._transcript_queue.put(result)
-                            print(f"Whisper emitting new: '{new_text[:50]}...'")
+                            logger.debug(f"Whisper emitting new: '{new_text[:50]}...'")
                         else:
-                            print(f"Whisper: no new content detected")
+                            logger.debug("Whisper: no new content detected")
 
                         self._last_transcript = full_text
 
                 except Exception as e:
-                    print(f"Whisper transcription error: {e}")
+                    logger.error(f"Whisper transcription error: {e}")
 
     def _extract_new_content(self, full_text: str) -> str:
         """
@@ -447,10 +450,10 @@ class WhisperProvider(TranscriptionProvider):
             phrase = " ".join(words[i:i+5])
             normalized = re.sub(r'[^\w\s]', '', phrase.lower()).strip()
             self._emitted_phrases.add(normalized)
-        # Limit size to prevent memory issues
-        if len(self._emitted_phrases) > 1000:
-            # Keep most recent half
-            self._emitted_phrases = set(list(self._emitted_phrases)[-500:])
+        # Limit size to prevent memory issues - clear when too large
+        # (sets are unordered so we can't meaningfully keep "recent" ones)
+        if len(self._emitted_phrases) > 500:
+            self._emitted_phrases.clear()
 
     async def send_audio(self, audio_data: bytes) -> None:
         """
@@ -597,7 +600,7 @@ def get_transcription_provider() -> TranscriptionProvider:
             return DeepgramProvider()
         except ValueError:
             # Fall back to Whisper if Deepgram key not configured
-            print("Deepgram API key not found, falling back to Whisper")
+            logger.warning("Deepgram API key not found, falling back to Whisper")
             return WhisperProvider()
     else:
         # Default to Whisper

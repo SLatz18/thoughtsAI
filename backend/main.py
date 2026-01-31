@@ -21,11 +21,19 @@ import os
 import json
 import asyncio
 import base64
+import logging
 from typing import Optional
 from uuid import UUID
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
@@ -72,29 +80,29 @@ async def lifespan(app: FastAPI):
 
     # Log environment for debugging
     db_url = os.getenv("DATABASE_URL", "")
-    print(f"Starting app with DATABASE_URL set: {bool(db_url)}")
+    logger.info(f"Starting app with DATABASE_URL set: {bool(db_url)}")
     if "localhost" in db_url or "127.0.0.1" in db_url:
-        print("WARNING: DATABASE_URL contains localhost - this won't work on Railway!")
-        print("Please use Railway's PostgreSQL reference variable")
+        logger.warning("DATABASE_URL contains localhost - this won't work on Railway!")
+        logger.warning("Please use Railway's PostgreSQL reference variable")
 
     for attempt in range(max_retries):
         try:
             await init_db()
-            print("Database initialized successfully")
+            logger.info("Database initialized successfully")
             break
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"Database connection failed (attempt {attempt + 1}/{max_retries}): {e}")
-                print(f"Retrying in {retry_delay} seconds...")
+                logger.warning(f"Database connection failed (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.info(f"Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
             else:
-                print(f"Could not connect to database after {max_retries} attempts: {e}")
-                print("App will start but database features may not work")
+                logger.error(f"Could not connect to database after {max_retries} attempts: {e}")
+                logger.warning("App will start but database features may not work")
 
     yield
     # Shutdown: Cleanup if needed
-    print("Shutting down")
+    logger.info("Shutting down")
 
 
 app = FastAPI(
@@ -316,7 +324,7 @@ class SessionHandler:
             # Start transcript receiving task
             self.transcript_task = asyncio.create_task(self._receive_transcripts())
         except Exception as e:
-            print(f"Failed to start transcription: {e}")
+            logger.warning(f"Failed to start transcription: {e}")
             # Continue without transcription - can still type thoughts
 
         self.is_active = True
@@ -435,10 +443,10 @@ class SessionHandler:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"Error receiving transcripts: {e}")
+            logger.error(f"Error receiving transcripts: {e}")
             await self._send_message({
                 "type": "error",
-                "message": f"Transcription error: {str(e)}",
+                "message": "Transcription error occurred",
             })
 
     async def _on_pause_detected(self, transcript: str) -> None:
@@ -528,10 +536,10 @@ class SessionHandler:
             })
 
         except Exception as e:
-            print(f"AI processing error: {e}")
+            logger.error(f"AI processing error: {e}")
             await self._send_message({
                 "type": "error",
-                "message": f"AI processing error: {str(e)}",
+                "message": "AI processing error occurred",
             })
 
         finally:
@@ -545,7 +553,7 @@ class SessionHandler:
         try:
             await self.websocket.send_json(message)
         except Exception as e:
-            print(f"Error sending WebSocket message: {e}")
+            logger.debug(f"Error sending WebSocket message: {e}")
 
 
 # ============================================================================
@@ -589,9 +597,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         await handler.process_audio(audio_bytes)
 
                 elif msg_type == "text":
-                    # Process direct text input
+                    # Process direct text input with validation
                     content = data.get("content", "")
                     if content:
+                        # Validate input length (max 10KB of text)
+                        if len(content) > 10000:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Text input too long (max 10,000 characters)",
+                            })
+                            continue
                         await handler.process_text_input(content)
 
                 elif msg_type == "end_session":
@@ -620,19 +635,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
 
         except WebSocketDisconnect:
-            print(f"WebSocket disconnected: {handler.session_id}")
+            logger.info(f"WebSocket disconnected: {handler.session_id}")
             # Clean up session
             if handler.is_active:
                 await handler.end_session()
 
         except Exception as e:
-            print(f"WebSocket error: {e}")
+            logger.error(f"WebSocket error: {e}")
             try:
                 await websocket.send_json({
                     "type": "error",
-                    "message": str(e),
+                    "message": "An unexpected error occurred",
                 })
-            except:
+            except Exception:
+                # Connection likely already closed, nothing we can do
                 pass
 
 
