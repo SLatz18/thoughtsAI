@@ -27,6 +27,17 @@
             <!-- Title -->
             <h1 class="document-title" id="documentTitle">New Session</h1>
 
+            <!-- Transcript (dev toggle) -->
+            <div class="transcript-section hidden" id="transcriptSection">
+                <div class="transcript-header">
+                    <span>Transcript</span>
+                    <button class="hide-transcript-btn" id="hideTranscriptBtn">&times;</button>
+                </div>
+                <div class="transcript-content" id="transcriptContent">
+                    <p class="placeholder">Your words will appear here...</p>
+                </div>
+            </div>
+
             <!-- AI Responses -->
             <div class="ai-responses" id="aiResponses">
                 <p class="placeholder">AI responses will appear here as you think out loud...</p>
@@ -56,6 +67,7 @@
                 placeholder="Ask anything"
                 disabled
             >
+            <button class="transcript-toggle" id="transcriptToggle" title="Show transcript">T</button>
         </div>
     </div>
 

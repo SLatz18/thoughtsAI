@@ -15,8 +15,10 @@ const state = {
     audioStream: null,
     isRecording: false,
     transcript: '',
+    interimTranscript: '',
     document: '',
     aiResponses: [],
+    showTranscript: false,
 };
 
 // DOM Elements
@@ -27,6 +29,10 @@ const elements = {
     documentTitle: document.getElementById('documentTitle'),
     notesContent: document.getElementById('notesContent'),
     aiResponses: document.getElementById('aiResponses'),
+    transcriptSection: document.getElementById('transcriptSection'),
+    transcriptContent: document.getElementById('transcriptContent'),
+    transcriptToggle: document.getElementById('transcriptToggle'),
+    hideTranscriptBtn: document.getElementById('hideTranscriptBtn'),
     modeIndicator: document.getElementById('modeIndicator'),
     stopIndicator: document.getElementById('stopIndicator'),
     errorToast: document.getElementById('errorToast'),
@@ -206,6 +212,32 @@ function blobToBase64(blob) {
 function handleTranscript(message) {
     if (message.is_final) {
         state.transcript += (state.transcript ? ' ' : '') + message.text;
+        state.interimTranscript = '';
+    } else {
+        state.interimTranscript = message.text;
+    }
+    updateTranscriptDisplay();
+}
+
+function updateTranscriptDisplay() {
+    if (!state.showTranscript) return;
+
+    const final = state.transcript ? `<span>${escapeHtml(state.transcript)}</span>` : '';
+    const interim = state.interimTranscript ? `<span class="interim"> ${escapeHtml(state.interimTranscript)}</span>` : '';
+
+    if (final || interim) {
+        elements.transcriptContent.innerHTML = final + interim;
+    } else {
+        elements.transcriptContent.innerHTML = '<p class="placeholder">Your words will appear here...</p>';
+    }
+}
+
+function toggleTranscript() {
+    state.showTranscript = !state.showTranscript;
+    elements.transcriptSection.classList.toggle('hidden', !state.showTranscript);
+    elements.transcriptToggle.classList.toggle('active', state.showTranscript);
+    if (state.showTranscript) {
+        updateTranscriptDisplay();
     }
 }
 
@@ -379,17 +411,22 @@ elements.modalBackdrop.addEventListener('click', closeExportModal);
 elements.copyExportBtn.addEventListener('click', copyToClipboard);
 elements.downloadExportBtn.addEventListener('click', downloadMarkdown);
 
+elements.transcriptToggle.addEventListener('click', toggleTranscript);
+elements.hideTranscriptBtn.addEventListener('click', toggleTranscript);
+
 elements.backBtn.addEventListener('click', () => {
     if (state.isSessionActive) {
         endSession();
     }
     // Reset view
     state.transcript = '';
+    state.interimTranscript = '';
     state.document = '';
     state.aiResponses = [];
     elements.documentTitle.textContent = 'New Session';
     elements.aiResponses.innerHTML = '<p class="placeholder">AI responses will appear here as you think out loud...</p>';
     elements.notesContent.innerHTML = '<p class="placeholder">Organized notes will appear here...</p>';
+    elements.transcriptContent.innerHTML = '<p class="placeholder">Your words will appear here...</p>';
 });
 
 // Keep-alive
