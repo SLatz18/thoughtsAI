@@ -16,6 +16,7 @@ const state = {
     isRecording: false,
     transcript: '',
     document: '',
+    aiResponses: [],
 };
 
 // DOM Elements
@@ -25,6 +26,7 @@ const elements = {
     textInput: document.getElementById('textInput'),
     documentTitle: document.getElementById('documentTitle'),
     notesContent: document.getElementById('notesContent'),
+    aiResponses: document.getElementById('aiResponses'),
     modeIndicator: document.getElementById('modeIndicator'),
     stopIndicator: document.getElementById('stopIndicator'),
     errorToast: document.getElementById('errorToast'),
@@ -101,6 +103,7 @@ function handleMessage(message) {
             break;
 
         case 'ai_response':
+            addAIResponse(message.conversation);
             if (message.updated_document) updateDocument(message.updated_document);
             break;
 
@@ -228,8 +231,43 @@ function updateDocument(markdown) {
 
         elements.notesContent.innerHTML = formatMarkdown(markdown);
     } else {
-        elements.notesContent.innerHTML = '<p class="placeholder">Start speaking or typing to capture your thoughts...</p>';
+        elements.notesContent.innerHTML = '<p class="placeholder">Organized notes will appear here...</p>';
     }
+}
+
+function addAIResponse(response) {
+    if (!response) return;
+
+    state.aiResponses.push({
+        text: response,
+        timestamp: new Date(),
+    });
+
+    // Remove placeholder if present
+    const placeholder = elements.aiResponses.querySelector('.placeholder');
+    if (placeholder) placeholder.remove();
+
+    // Create response element
+    const responseEl = document.createElement('div');
+    responseEl.className = 'ai-response-item';
+
+    const contentEl = document.createElement('div');
+    contentEl.innerHTML = formatMarkdown(response);
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'response-time';
+    timeEl.textContent = formatTime(new Date());
+
+    responseEl.appendChild(contentEl);
+    responseEl.appendChild(timeEl);
+    elements.aiResponses.appendChild(responseEl);
+
+    // Scroll to latest response
+    responseEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function formatTime(date) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function showError(message) {
@@ -348,8 +386,10 @@ elements.backBtn.addEventListener('click', () => {
     // Reset view
     state.transcript = '';
     state.document = '';
+    state.aiResponses = [];
     elements.documentTitle.textContent = 'New Session';
-    elements.notesContent.innerHTML = '<p class="placeholder">Start speaking or typing to capture your thoughts...</p>';
+    elements.aiResponses.innerHTML = '<p class="placeholder">AI responses will appear here as you think out loud...</p>';
+    elements.notesContent.innerHTML = '<p class="placeholder">Organized notes will appear here...</p>';
 });
 
 // Keep-alive

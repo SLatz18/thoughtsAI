@@ -117,10 +117,77 @@ body {
     line-height: 1.2;
 }
 
+/* AI Responses */
+.ai-responses {
+    margin-bottom: 32px;
+}
+
+.ai-responses .placeholder {
+    color: #999;
+    font-style: italic;
+}
+
+.ai-response-item {
+    padding: 16px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.ai-response-item:last-child {
+    border-bottom: none;
+}
+
+.ai-response-item p {
+    margin-bottom: 8px;
+    line-height: 1.7;
+}
+
+.ai-response-item p:last-child {
+    margin-bottom: 0;
+}
+
+.response-time {
+    font-size: 0.75rem;
+    color: #999;
+    margin-top: 8px;
+}
+
+/* Notes Section (collapsible) */
+.notes-section {
+    margin-top: 24px;
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+}
+
+.notes-toggle {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #666;
+    cursor: pointer;
+    padding: 8px 0;
+    list-style: none;
+}
+
+.notes-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.notes-toggle::before {
+    content: '▸ ';
+}
+
+.notes-section[open] .notes-toggle::before {
+    content: '▾ ';
+}
+
+.notes-toggle:hover {
+    color: #1a1a1a;
+}
+
 /* Notes Content */
 .notes-content {
     color: #1a1a1a;
     line-height: 1.8;
+    padding-top: 16px;
 }
 
 .notes-content .placeholder {
