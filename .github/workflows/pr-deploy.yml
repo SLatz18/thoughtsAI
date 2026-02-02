@@ -1,0 +1,157 @@
+name: PR Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+env:
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+jobs:
+  deploy-preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+      - name: Setup PR Environment with PostgreSQL
+        id: setup
+        run: |
+          # Set environment name based on PR number
+          ENV_NAME="pr-${{ github.event.pull_request.number }}"
+          echo "env_name=$ENV_NAME" >> $GITHUB_OUTPUT
+
+          # Check if environment already exists, create if not
+          EXISTING_ENV=$(railway environment list 2>/dev/null | grep -w "$ENV_NAME" || true)
+
+          if [ -z "$EXISTING_ENV" ]; then
+            echo "Creating new environment: $ENV_NAME"
+            railway environment create "$ENV_NAME"
+          else
+            echo "Environment $ENV_NAME already exists"
+          fi
+
+          # Switch to the PR environment
+          railway environment "$ENV_NAME"
+
+          # Check if PostgreSQL service exists in this environment
+          SERVICES=$(railway service list 2>/dev/null || echo "")
+
+          if ! echo "$SERVICES" | grep -q "postgres"; then
+            echo "Provisioning PostgreSQL for $ENV_NAME..."
+
+            # Create PostgreSQL service from Railway's template
+            railway service create --name "postgres-$ENV_NAME" <<EOF
+          {
+            "source": {
+              "image": "postgres:16-alpine"
+            },
+            "variables": {
+              "POSTGRES_USER": "postgres",
+              "POSTGRES_PASSWORD": "$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24)",
+              "POSTGRES_DB": "thinking_partner"
+            }
+          }
+          EOF
+
+            # Wait for PostgreSQL to be ready
+            echo "Waiting for PostgreSQL to initialize..."
+            sleep 30
+          fi
+
+      - name: Deploy Application
+        run: |
+          ENV_NAME="pr-${{ github.event.pull_request.number }}"
+          railway environment "$ENV_NAME"
+
+          # Link the app to PostgreSQL and deploy
+          railway up --detach
+
+          # Get the deployment URL
+          DEPLOY_URL=$(railway status --json 2>/dev/null | jq -r '.deploymentUrl // empty' || echo "")
+          echo "Deployment URL: $DEPLOY_URL"
+
+      - name: Comment PR with deployment URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const envName = `pr-${{ github.event.pull_request.number }}`;
+            const body = `## 🚀 Preview Deployment Ready
+
+            Your PR preview environment has been deployed with:
+            - ✅ Application service
+            - ✅ PostgreSQL database (auto-provisioned)
+
+            **Environment:** \`${envName}\`
+
+            The DATABASE_URL has been automatically configured for this preview environment.
+
+            > Note: Preview environments are automatically cleaned up when the PR is closed.`;
+
+            // Find existing comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Preview Deployment Ready')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  cleanup-preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.app/install.sh | sh
+          echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+      - name: Cleanup PR Environment
+        run: |
+          ENV_NAME="pr-${{ github.event.pull_request.number }}"
+
+          echo "Cleaning up environment: $ENV_NAME"
+
+          # Delete the PR environment (this removes all services including PostgreSQL)
+          railway environment delete "$ENV_NAME" --yes 2>/dev/null || echo "Environment may already be deleted"
+
+          echo "Cleanup complete for $ENV_NAME"
+
+      - name: Comment PR about cleanup
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## 🧹 Preview Environment Cleaned Up
+
+            The preview environment for this PR has been deleted along with its PostgreSQL database.`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });

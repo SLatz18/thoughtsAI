@@ -1,0 +1,43 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "name": "ThoughtsAI",
+  "description": "AI-powered thinking partner with PostgreSQL database",
+  "services": [
+    {
+      "name": "app",
+      "source": {
+        "repo": "SLatz18/thoughtsAI"
+      },
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT",
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 100,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
+      },
+      "variables": {
+        "DATABASE_URL": "${{postgres.DATABASE_URL}}",
+        "ANTHROPIC_API_KEY": {
+          "description": "Anthropic API key for Claude",
+          "required": true
+        },
+        "OPENAI_API_KEY": {
+          "description": "OpenAI API key for Whisper transcription",
+          "required": false
+        },
+        "DEEPGRAM_API_KEY": {
+          "description": "Deepgram API key for streaming transcription",
+          "required": false
+        }
+      }
+    },
+    {
+      "name": "postgres",
+      "plugin": "postgresql",
+      "variables": {}
+    }
+  ]
+}

@@ -7,3 +7,12 @@ healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+# Service name for Railway project linking
+[service]
+name = "app"
+
+# Database reference - Railway will auto-inject DATABASE_URL
+# when a PostgreSQL service named "postgres" exists in the project
+[variables]
+DATABASE_URL = "${{postgres.DATABASE_URL}}"
