@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a1a2e">
-    <meta name="description" content="AI-powered thinking partner for busy professionals">
+    <meta name="theme-color" content="#FAF9F6">
+    <meta name="description" content="AI-powered thinking partner">
     <title>Thinking Partner</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -12,143 +12,85 @@
     <div class="app-container">
         <!-- Header -->
         <header class="header">
-            <h1 class="logo">Thinking Partner</h1>
-            <div class="header-actions">
-                <button id="exportBtn" class="btn btn-secondary" disabled>
-                    <span class="icon">📥</span>
-                    <span class="btn-text">Export</span>
-                </button>
+            <button class="back-btn" id="backBtn">&larr; Back</button>
+            <div class="header-center">
+                <span class="mode-indicator" id="modeIndicator">
+                    <span class="status-dot"></span>
+                    Enhanced notes
+                </span>
             </div>
+            <button class="share-btn" id="exportBtn" disabled>Share</button>
         </header>
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Session Control Panel -->
-            <section class="session-panel">
-                <div class="session-status" id="sessionStatus">
-                    <div class="status-indicator inactive"></div>
-                    <span>Ready to start</span>
+            <!-- Title -->
+            <h1 class="document-title" id="documentTitle">New Session</h1>
+
+            <!-- Transcript (dev toggle) -->
+            <div class="transcript-section hidden" id="transcriptSection">
+                <div class="transcript-header">
+                    <span>Transcript</span>
+                    <button class="hide-transcript-btn" id="hideTranscriptBtn">&times;</button>
                 </div>
-
-                <button id="sessionBtn" class="btn btn-primary btn-large">
-                    <span class="icon">🎙️</span>
-                    Start Thinking Session
-                </button>
-
-                <!-- Recording indicator -->
-                <div class="recording-indicator hidden" id="recordingIndicator">
-                    <div class="pulse-ring"></div>
-                    <span>Listening...</span>
+                <div class="transcript-content" id="transcriptContent">
+                    <p class="placeholder">Your words will appear here...</p>
                 </div>
-            </section>
-
-            <!-- Two-column layout for desktop, stacked for mobile -->
-            <div class="content-grid">
-                <!-- Left Column: Transcript & AI Response -->
-                <section class="conversation-section">
-                    <!-- Real-time Transcript -->
-                    <div class="panel transcript-panel">
-                        <div class="panel-header">
-                            <h2>Live Transcript</h2>
-                            <div class="panel-actions">
-                                <span class="badge" id="transcriptBadge">0 words</span>
-                                <button class="btn btn-icon copy-btn" id="copyTranscriptBtn" title="Copy transcript">
-                                    <span>📋</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="panel-content" id="transcriptContent">
-                            <p class="placeholder-text">Your thoughts will appear here as you speak...</p>
-                        </div>
-
-                        <!-- Text input for typing (fallback/testing) -->
-                        <div class="text-input-container">
-                            <input
-                                type="text"
-                                id="textInput"
-                                class="text-input"
-                                placeholder="Or type your thoughts here..."
-                                disabled
-                            >
-                            <button id="sendTextBtn" class="btn btn-icon" disabled>
-                                <span>→</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- AI Response -->
-                    <div class="panel ai-panel">
-                        <div class="panel-header">
-                            <h2>AI Partner</h2>
-                            <div class="panel-actions">
-                                <div class="processing-indicator hidden" id="processingIndicator">
-                                    <div class="spinner"></div>
-                                    <span>Thinking...</span>
-                                </div>
-                                <button class="btn btn-icon copy-btn" id="copyAiBtn" title="Copy AI responses">
-                                    <span>📋</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="panel-content" id="aiResponseContent">
-                            <p class="placeholder-text">AI responses will appear here...</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Right Column: Document -->
-                <section class="document-section">
-                    <div class="panel document-panel">
-                        <div class="panel-header">
-                            <h2>Organized Notes</h2>
-                            <div class="panel-actions">
-                                <button class="btn btn-icon copy-btn" id="copyDocBtn" title="Copy notes">
-                                    <span>📋</span>
-                                </button>
-                                <button class="btn btn-icon" id="toggleDocBtn" title="Toggle view">
-                                    <span id="toggleIcon">📄</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="panel-content document-content" id="documentContent">
-                            <p class="placeholder-text">Your thoughts will be organized here as sections...</p>
-                        </div>
-                    </div>
-                </section>
             </div>
+
+            <!-- AI Responses -->
+            <div class="ai-responses" id="aiResponses">
+                <p class="placeholder">AI responses will appear here as you think out loud...</p>
+            </div>
+
+            <!-- Notes Summary (collapsible) -->
+            <details class="notes-section" id="notesSection">
+                <summary class="notes-toggle">Notes</summary>
+                <div class="notes-content" id="notesContent">
+                    <p class="placeholder">Organized notes will appear here...</p>
+                </div>
+            </details>
         </main>
 
-        <!-- Footer -->
-        <footer class="footer">
-            <p>Built for busy professionals who need to think clearly</p>
-        </footer>
-
-        <!-- Error Toast -->
-        <div class="toast hidden" id="errorToast">
-            <span class="toast-icon">⚠️</span>
-            <span class="toast-message" id="errorMessage"></span>
-            <button class="toast-close" id="closeToast">×</button>
+        <!-- Input Bar -->
+        <div class="input-bar">
+            <div class="input-controls">
+                <button class="mic-btn" id="sessionBtn">
+                    <span class="mic-icon">|||</span>
+                </button>
+                <span class="stop-indicator" id="stopIndicator"></span>
+            </div>
+            <input
+                type="text"
+                id="textInput"
+                class="ask-input"
+                placeholder="Ask anything"
+                disabled
+            >
+            <button class="transcript-toggle" id="transcriptToggle" title="Show transcript">T</button>
         </div>
+    </div>
 
-        <!-- Export Modal -->
-        <div class="modal hidden" id="exportModal">
-            <div class="modal-backdrop" id="modalBackdrop"></div>
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Export Document</h3>
-                    <button class="btn btn-icon modal-close" id="closeModal">×</button>
-                </div>
-                <div class="modal-body">
-                    <textarea id="exportPreview" class="export-preview" readonly></textarea>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" id="copyExportBtn">
-                        <span class="icon">📋</span> Copy to Clipboard
-                    </button>
-                    <button class="btn btn-primary" id="downloadExportBtn">
-                        <span class="icon">💾</span> Download .md
-                    </button>
-                </div>
+    <!-- Toast (hidden by default) -->
+    <div class="toast hidden" id="errorToast">
+        <span id="errorMessage"></span>
+        <button class="toast-close" id="closeToast">&times;</button>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal hidden" id="exportModal">
+        <div class="modal-backdrop" id="modalBackdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Export Notes</h3>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="exportPreview" class="export-preview" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="copyExportBtn">Copy</button>
+                <button class="btn-primary" id="downloadExportBtn">Download</button>
             </div>
         </div>
     </div>
